@@ -1,70 +1,86 @@
+/**
+ * =============================================================================
+ * TABLE DES MATIÈRES : main.js
+ * =============================================================================
+ * 1. IMPORTATIONS ........................ Modules et composants externes
+ * 2. SÉLECTION DES ÉLÉMENTS HTML ......... Récupération des objets du DOM
+ * 3. INITIALISATION & LOGIQUE D'ENTRÉE ... Lancement de l'app selon l'URL
+ * 4. ÉCOUTEURS D'ÉVÉNEMENTS .............. Interactions utilisateur (Range, GPS)
+ * =============================================================================
+ */
+
 // --- 1. IMPORTATIONS ---
-// On importe la classe qui gère la carte et la logique de fermeture des boîtes
+// On importe la "classe" Geo (notre moteur de carte) et la fonction pour fermer les fenêtres
 import { Geo } from './inc/geo.js';
 import boxClose from './inc/box.js';
 
 // --- 2. SÉLECTION DES ÉLÉMENTS HTML ---
-const $mapBox = document.querySelector('#map');      // La zone où s'affiche la carte
-const $geoBtn = document.querySelector('.geo-btn');   // Le bouton pour se relocaliser
-const $distanceRange = document.querySelector('#distance'); // Le curseur (range)
+// On crée des constantes pour manipuler les éléments de notre page HTML
+const $mapBox = document.querySelector('#map');            // La zone où s'affiche la carte
+const $geoBtn = document.querySelector('.geo-btn');         // Le bouton pour se relocaliser
+const $distanceRange = document.querySelector('#distance'); // Le curseur pour le rayon (km)
 
 // --- 3. INITIALISATION ---
-// On crée l'instance de l'objet Geo
+// On crée l'instance de l'objet Geo (on prépare la machine)
 const myGeo = new Geo($mapBox, $geoBtn);
 
-// On lance la carte immédiatement au chargement de la page
-// (init() gère soit le GPS, soit la position par défaut si refusé)
-// main.js
-
-// On regarde si on vient de la page index avec "?localisation=n"
+/**
+ * LOGIQUE DE DÉMARRAGE :
+ * On analyse l'adresse URL pour savoir si l'utilisateur a choisi 
+ * la géolocalisation ou l'adresse par défaut sur la page d'accueil.
+ */
 const urlParams = new URLSearchParams(window.location.search);
 const localisationParam = urlParams.get('localisation');
 
 if (localisationParam === 'n') {
-    // L'utilisateur a choisi "Adresse par défaut"
+    // Cas "n" (Non) : L'utilisateur a choisi "Adresse par défaut"
+    // On force la position sur Neuville sans demander le GPS
     myGeo._fallbackPosition(); 
 } else {
-    // Par défaut, ou si 'y', on tente le GPS
+    // Cas "y" (Yes) ou lien direct : On tente d'utiliser le GPS réel
+    // init() vérifiera les permissions du navigateur
     myGeo.init();
 }
 
-// Active la gestion des clics sur les boutons "fermer" des alertes/modales
+// On active la petite croix (X) sur toutes nos fenêtres d'alertes
 boxClose();
+
 
 // --- 4. ÉCOUTEURS D'ÉVÉNEMENTS (INTERACTIONS) ---
 
 /**
- * Gestion du curseur de distance
- * 'change' est souvent préférable à 'input' pour ne pas harceler l'API à chaque millimètre,
- * mais 'input' est plus fluide visuellement.
+ * GESTION DU CURSEUR DE DISTANCE
+ * Permet de mettre à jour la recherche quand on bouge le curseur.
+ * L'événement 'input' réagit pendant que l'on glisse.
  */
 $distanceRange.addEventListener('input', (e) => {
+    // On récupère la valeur du curseur (1, 2, 5... km)
     const km = e.target.value;
     
-    // 1. Mise à jour du texte (si tu as un élément pour l'afficher)
+    // 1. Mise à jour du texte indicateur dans le HTML (si présent)
     const $distDisplay = document.querySelector('#distance-value');
     if ($distDisplay) $distDisplay.textContent = `${km} km`;
 
-    // 2. Mise à jour de la variable dans l'objet Geo
+    // 2. On informe notre objet "myGeo" que la distance a changé
     myGeo.setDistance(km);
 
-    // 3. RELANCER LA RECHERCHE
-    // On utilise la dernière position connue stockée dans myGeo
+    // 3. RELANCER LA RECHERCHE AUTOMATIQUEMENT
+    // Si on a déjà une position, on demande à la carte de recharger les arrêts
     if (myGeo.lastPosition) {
         myGeo.loadStops(myGeo.lastPosition);
     }
 });
 
 /**
- * Bouton "Me géolocaliser"
- * Permet de recentrer la carte sur l'utilisateur à la demande
+ * BOUTON "ME GÉOLOCALISER"
+ * Permet de recentrer la carte sur sa position réelle à n'importe quel moment.
  */
 $geoBtn.addEventListener('click', (e) => {
     e.preventDefault();
     
-    // On affiche un petit retour visuel (optionnel)
-    console.log("Relocalisation en cours...");
+    // Petit message de debug pour confirmer le clic
+    console.log("Demande de relocalisation GPS...");
     
-    // On relance l'initialisation complète
+    // On relance la procédure complète de localisation
     myGeo.init();
 });

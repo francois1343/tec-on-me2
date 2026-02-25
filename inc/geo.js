@@ -1,30 +1,46 @@
 /**
- * Classe Geo : Gère tout l'affichage de la carte et les interactions avec les API de transport.
+ * =============================================================================
+ * TABLE DES MATIÈRES
+ * =============================================================================
+ * 1. CONSTRUCTEUR & CONFIGURATION ........ Initialisation et état global
+ * 2. GESTION DES ICÔNES .................. Création des marqueurs personnalisés
+ * 3. SYSTÈME DE GÉOLOCALISATION .......... GPS, Permissions et Secours
+ * 4. MOTEUR DE CARTE (LEAFLET) ........... Création et gestion des calques
+ * 5. CHARGEMENT DES DONNÉES (API) ........ Récupération des arrêts (ODWB)
+ * 6. RENDU ET POPUPS ..................... Affichage des marqueurs et bus
+ * 7. ITINÉRAIRES (ROUTE & WALKING) ....... Tracés bus (Red) et piéton (Blue)
+ * =============================================================================
  */
+
 class Geo {
+    /**
+     * 1. CONSTRUCTEUR & CONFIGURATION
+     * Prépare les variables de base dont l'application a besoin pour fonctionner.
+     */
     constructor($mapBox, $geoSwitch) {
-        // --- 1. CONFIGURATION ---
-        // L'adresse de notre serveur qui contient les données des bus
+        // L'adresse de notre serveur qui contient les données des lignes de bus
         this.urlApi = 'https://cepegra-frontend.xyz/bootcamp';
         
         // Références aux éléments HTML (la div de la carte et le bouton)
         this.$mapBox = $mapBox;
         this.$geoSwitch = $geoSwitch;
         
-        // --- 2. ÉTAT DE L'APPLICATION ---
-        this.map = null;          // Contiendra l'objet Leaflet une fois la carte créée
+        // État de l'application : on stocke la carte et la distance de recherche
+        this.map = null;          // Contiendra l'objet Leaflet une fois créé
         this.distance = 1;        // Rayon de recherche par défaut (1km)
+        this.lastPosition = null; // Stocke les dernières coordonnées pour les calculs
         
-        // --- 3. LES CALQUES (LAYER GROUPS) ---
-        // Au lieu de supprimer les markers un par un, on crée des "tiroirs".
-        // On peut vider un tiroir entier (clearLayers) sans toucher au reste de la carte.
+        // --- LES CALQUES (LAYER GROUPS) ---
+        // On crée des "tiroirs" pour ranger nos éléments.
+        // Cela permet de vider un tiroir (ex: les arrêts) sans effacer la carte elle-même.
         this.layers = {
-            stops: L.layerGroup(), // Tiroir pour les icônes d'arrêts de bus
-            route: L.layerGroup(),  // Tiroir pour le tracé rouge du bus et ses terminus
-            walking: L.layerGroup()  //Tiroir pour le tracé bleu de la marche à pied
+            stops: L.layerGroup(),   // Pour les icônes d'arrêts de bus
+            route: L.layerGroup(),   // Pour le tracé rouge du bus
+            walking: L.layerGroup()  // Pour le tracé bleu de la marche à pied
         };
 
-        // Écouteur global pour les lignes de bus
+        // Écouteur global pour les lignes de bus (Délégation d'événement)
+        // On écoute la zone de la carte : si on clique sur un lien avec la classe 'bus-link', on trace la ligne.
         this.$mapBox.addEventListener('click', (e) => {
             if (e.target.classList.contains('bus-link')) {
                 e.preventDefault();
@@ -35,18 +51,19 @@ class Geo {
         // Options pour la précision du GPS
         this.optionsMap = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
         
-        // On prépare les icônes
+        // On lance la préparation des images des marqueurs
         this._initIcons();
     }
 
     /**
-     * Crée les icônes personnalisées pour les différents marqueurs
+     * 2. GESTION DES ICÔNES
+     * Définit l'apparence des marqueurs sur la carte (taille, point d'ancrage).
      */
     _initIcons() {
         const configCommune = {
-            iconSize: [53, 53],    // Taille de l'image
-            iconAnchor: [26, 53],  // Point de l'image qui touche la coordonnée (le bas au milieu)
-            popupAnchor: [0, -50]  // Où la bulle d'info doit apparaître par rapport au point
+            iconSize: [53, 53],    // Taille de l'image en pixels
+            iconAnchor: [26, 53],  // Le point de l'image qui "touche" la coordonnée (le bas milieu)
+            popupAnchor: [0, -50]  // Où la bulle d'info s'affiche par rapport au marqueur
         };
 
         this.icons = {
@@ -59,22 +76,23 @@ class Geo {
     }
 
     /**
-     * Point d'entrée : vérifie si l'utilisateur autorise le GPS
+     * 3. SYSTÈME DE GÉOLOCALISATION
+     * Gère la demande d'autorisation et récupère la position de l'utilisateur.
      */
     async init() {
         try {
-            // On demande au navigateur si on a le droit d'utiliser le GPS
+            // On vérifie si l'utilisateur a déjà donné sa permission
             const result = await navigator.permissions.query({ name: 'geolocation' });
             
             if (result.state === 'granted' || result.state === 'prompt') {
-                // Si oui, on demande la position réelle
+                // Si autorisé, on demande la position précise au navigateur
                 navigator.geolocation.getCurrentPosition(
-                    (pos) => this.createMap(pos),
-                    (err) => this.errorPosition(err),
+                    (pos) => this.createMap(pos), // Succès
+                    (err) => this.errorPosition(err), // Erreur
                     this.optionsMap
                 );
             } else {
-                // Si non, on utilise une position par défaut (Neuville)
+                // Si refusé, on utilise la position de secours
                 this._fallbackPosition();
             }
         } catch (error) {
@@ -82,78 +100,86 @@ class Geo {
         }
     }
 
-    /**
-     * Position de secours si le GPS est désactivé
-     */
+    // Position par défaut (Neuville) si le GPS est inaccessible
     _fallbackPosition() {
         const dummyPos = { coords: { latitude: 50.112673, longitude: 4.418669 } };
         this.createMap(dummyPos);
     }
 
+    // Affiche une erreur dans la console si le GPS échoue
+    errorPosition(err) {
+        console.warn(`Erreur de localisation (${err.code}): ${err.message}`);
+    }
+
+    // Permet de changer le rayon de recherche (ex: via le curseur range)
     setDistance(km) {
         this.distance = km;
     }
 
     /**
-     * Initialise la carte Leaflet sur l'écran
+     * 4. MOTEUR DE CARTE (LEAFLET)
+     * Affiche la carte et configure les interactions de base.
      */
     createMap(position) {
         const { latitude, longitude } = position.coords;
 
-        // Si une carte existe déjà, on l'efface pour éviter les bugs de mémoire
+        // Si une carte existe déjà, on la supprime pour éviter les bugs visuels
         if (this.map) this.map.remove();
 
-        // On affiche la div HTML et on crée l'objet Map
+        // On affiche la zone de la carte et on initialise Leaflet centrée sur nous
         this.$mapBox.classList.remove('hidde');
         this.map = L.map(this.$mapBox).setView([latitude, longitude], 17);
 
-        // On ajoute le fond de carte (le dessin des rues)
+        // On ajoute le "fond de carte" (les images des rues)
         L.tileLayer("https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=f5a6d9a8d3484637b41037978e6e1e7b", {
             attribution: '© OpenStreetMap - TEC'
         }).addTo(this.map);
 
-        // IMPORTANT : On ajoute nos "tiroirs" (calques) à la carte
+        // On active nos "tiroirs" (calques) sur la carte
         this.layers.stops.addTo(this.map);
         this.layers.route.addTo(this.map);
-        this.layers.walking.addTo(this.map)
+        this.layers.walking.addTo(this.map);
 
-        // On place un marqueur là où se trouve l'utilisateur
+        // Marqueur fixe pour notre position initiale
         L.marker([latitude, longitude], { icon: this.icons.user }).addTo(this.map);
 
-        // On charge les premiers arrêts de bus
+        // On charge les arrêts autour de nous
         this.loadStops(position);
 
-        // Événement : Si on clique sur la carte, on cherche les bus à cet endroit
+        // Événement : Si on clique sur la carte, on relance une recherche à cet endroit
         this.map.on('click', (e) => {
-            this.layers.route.clearLayers(); // On efface un éventuel trajet affiché
+            this.layers.route.clearLayers(); // On efface le bus précédent
             this.loadStops({ coords: { latitude: e.latlng.lat, longitude: e.latlng.lng } });
         });
     }
 
     /**
-     * Récupère les arrêts de bus depuis l'API Open Data (ODWB)
+     * 5. CHARGEMENT DES DONNÉES (API)
+     * Va chercher les arrêts de bus TEC réels via l'Open Data Wallonie-Bruxelles.
      */
     async loadStops(position) {
-        this.lastPosition = position; // On garde en mémoire la dernière position utilisée pour les calculs de distance
-        // On vide le tiroir des arrêts actuels avant d'en mettre de nouveaux
+        this.lastPosition = position; // Sauvegarde pour les calculs d'itinéraires piétons
+        
+        // Nettoyage avant de charger de nouveaux points
         this.layers.stops.clearLayers();
+        
+        // On place un marqueur "cible" là où on a cliqué
         L.marker([position.coords.latitude, position.coords.longitude], { icon: this.icons.userClick }).addTo(this.layers.stops);
+        
         const { latitude, longitude } = position.coords;
 
         try {
-            // URL de l'API avec les coordonnées et le rayon (this.distance)
+            // URL complexe qui demande : "donne moi les arrêts dans un rayon de X km autour de ce point"
             const url = `https://www.odwb.be/api/explore/v2.1/catalog/datasets/le-tec-arrets-bus/records?limit=100&where=within_distance(coordinates, geom'POINT(${longitude} ${latitude})', ${this.distance}km)&order_by=distance(coordinates, geom'POINT(${longitude} ${latitude})')`;
             
             const response = await fetch(url);
             const data = await response.json();
-            
-            //alert(data.results.length+"/"+data.total_count + '/'+this.distance);
 
             if (data.results && data.results.length > 0) {
-                // Pour chaque arrêt trouvé, on crée un marqueur
+                // Pour chaque arrêt trouvé par l'API, on crée son marqueur
                 data.results.forEach(stop => this._renderStopMarker(stop));
             } else {
-                // Si rien n'est trouvé, on affiche l'alerte HTML
+                // Si aucun arrêt, on affiche notre message d'alerte HTML
                 document.querySelector('.box-alert').classList.remove('hidden');
             }
         } catch (error) {
@@ -162,89 +188,84 @@ class Geo {
     }
 
     /**
-     * Dessine UN marqueur d'arrêt et gère le clic pour voir les lignes de bus
+     * 6. RENDU ET POPUPS
+     * Crée physiquement les icônes d'arrêts et gère le contenu de la bulle d'info.
      */
     _renderStopMarker(stop) {
-    // 1. Calcul de la distance initiale (vol d'oiseau)
-    const stopPos = L.latLng(stop.coordinates.lat, stop.coordinates.lon);
-    const userPos = L.latLng(this.lastPosition.coords.latitude, this.lastPosition.coords.longitude);
-    const distance = userPos.distanceTo(stopPos);
-    const distText = distance > 1000 ? (distance / 1000).toFixed(1) + " km" : Math.round(distance) + " m";
+        // Calcul de distance "vol d'oiseau" entre nous et l'arrêt
+        const stopPos = L.latLng(stop.coordinates.lat, stop.coordinates.lon);
+        const userPos = L.latLng(this.lastPosition.coords.latitude, this.lastPosition.coords.longitude);
+        const distance = userPos.distanceTo(stopPos);
+        const distText = distance > 1000 ? (distance / 1000).toFixed(1) + " km" : Math.round(distance) + " m";
 
-    // 2. Création du marqueur
-    const marker = L.marker([stop.coordinates.lat, stop.coordinates.lon], { icon: this.icons.stop })
-        .addTo(this.layers.stops);
+        // Ajout du marqueur d'arrêt dans le bon tiroir
+        const marker = L.marker([stop.coordinates.lat, stop.coordinates.lon], { icon: this.icons.stop })
+            .addTo(this.layers.stops);
 
-    // 3. Gestion du clic
-    marker.on('click', async () => {
-        // A. ON CHARGE LES BUS D'ABORD
-        const response = await fetch(`${this.urlApi}/bus/${stop.stop_name}/${stop.coordinates.lon}`);
-        const data = await response.json();
-        
-        let busHtml = "";
-        if (data.code === "ok") {
-            data.content.forEach(bus => {
-                if (bus.route_id) {
-                    busHtml += `<a href="#" class="bus-link" data-shape="${bus.shape_id}">${bus.route_short_name} - ${bus.route_long_name}</a><br>`;
-                }
-            });
-        } else {
-            busHtml = `<p class="error">Aucun bus renseigné ici</p>`;
-        }
+        // Quand on clique sur un arrêt
+        marker.on('click', async () => {
+            // 1. On interroge notre API locale pour savoir quels bus passent ici
+            const response = await fetch(`${this.urlApi}/bus/${stop.stop_name}/${stop.coordinates.lon}`);
+            const data = await response.json();
+            
+            let busHtml = "";
+            if (data.code === "ok") {
+                // On boucle sur chaque bus pour créer un lien cliquable
+                data.content.forEach(bus => {
+                    if (bus.route_id) {
+                        busHtml += `<a href="#" class="bus-link" data-shape="${bus.shape_id}">${bus.route_short_name} - ${bus.route_long_name}</a><br>`;
+                    }
+                });
+            } else {
+                busHtml = `<p class="error">Aucun bus renseigné ici</p>`;
+            }
 
-        // B. ON DÉFINIT LE CONTENU DE BASE (Titre + Distance + Bus)
-        const fullContent = `
-            <h4>${stop.stop_name}</h4>
-            <p>📍 À ${distText} (vol d'oiseau)</p>
-            <div class="walking-info">⌛ Calcul du trajet à pied...</div>
-            <hr>
-            ${busHtml}
-        `;
+            // 2. On prépare le contenu HTML de la popup
+            const fullContent = `
+                <h4>${stop.stop_name}</h4>
+                <p>📍 À ${distText} (vol d'oiseau)</p>
+                <div class="walking-info">⌛ Calcul du trajet à pied...</div>
+                <hr>
+                ${busHtml}
+            `;
 
-        // C. ON OUVRE LE POPUP
+            // 3. On configure et on ouvre la popup
+            marker.bindPopup(fullContent, {
+                autoPan: false,
+                closeOnClick: true,
+                className: 'fixed-header-popup'
+            }).openPopup();
 
-    marker.bindPopup(fullContent, {
-    autoPan: false,           // Garde la carte immobile
-    closeOnClick: true,       // Ferme si on clique ailleurs sur la carte
-    closeButton: true,
-    offset: [0, 0],           // Annule le décalage par défaut
-    className: 'fixed-header-popup'  // Une classe propre pour ton CSS
-}).openPopup();
+            // 4. On lance en arrière-plan le calcul du vrai chemin à pied
+            this.getWalkingRoute(stop.coordinates, marker);
+        });
+    }
 
-
-
-
-        // D. ON LANCE LE TRAJET À PIED (qui viendra remplacer "Calcul du trajet...")
-        // On n'a plus besoin d'attendre (await) ici, ça se fera en arrière-plan
-        this.getWalkingRoute(stop.coordinates, marker);
-        
-        // E. GESTION DES CLICS SUR LES BUS (Délegation ou timeout)
-        // On utilise la délégation sur la carte pour être sûr que ça marche
-    });
-}
     /**
-     * Dessine la ligne rouge du trajet complet d'un bus
+     * 7. ITINÉRAIRES (ROUTE & WALKING)
+     * Dessine les lignes sur la carte (Bus en rouge, Marche en bleu).
      */
+    
+    // Trace le parcours complet d'une ligne de bus (depuis notre API)
     async drawRoute(shapeId) {
-        // On vide le tiroir des trajets (efface le bus précédent)
-        this.layers.route.clearLayers();
+        this.layers.route.clearLayers(); // On efface le trajet précédent
 
         try {
             const response = await fetch(`${this.urlApi}/shapes/${shapeId}`);
             const data = await response.json();
 
             if (data.content && data.content.length > 0) {
-                // On transforme les données de l'API en une liste de points [lat, lon]
+                // Transformation des points API en coordonnées Leaflet
                 const points = data.content.map(p => [p.shape_pt_lat, p.shape_pt_lon]);
                 
-                // On dessine la ligne (Polyline)
+                // Dessin de la ligne rouge
                 L.polyline(points, { color: 'red', weight: 8, opacity: 0.7 }).addTo(this.layers.route);
-
-                // On ajoute des icônes spéciales pour le début et la fin
+                
+                // Icônes de départ et d'arrivée du bus
                 L.marker(points[0], { icon: this.icons.start }).bindPopup('Départ du bus').addTo(this.layers.route);
                 L.marker(points[points.length - 1], { icon: this.icons.end }).bindPopup('Terminus').addTo(this.layers.route);
 
-                // MAGIQUE : La carte s'ajuste toute seule pour montrer TOUT le trajet
+                // On ajuste la vue pour voir toute la ligne de bus
                 this.map.flyToBounds(points, { padding: [50, 50] });
             }
         } catch (error) {
@@ -252,75 +273,51 @@ class Geo {
         }
     }
 
-    errorPosition(err) {
-        console.warn(`Erreur de localisation (${err.code}): ${err.message}`);
-    }
+    // Calcule le chemin piéton via l'API OSRM
+    async getWalkingRoute(stopCoords, marker) {
+        this.layers.walking.clearLayers(); // Efface l'ancien chemin bleu
 
-    /**
- * Calcule et affiche le trajet à pied vers un arrêt
- */
-/**
- * Calcule l'itinéraire à pied, le dessine, et met à jour le popup du marqueur.
- * @param {Object} stopCoords - Les coordonnées de l'arrêt {lat, lon}
- * @param {L.marker} marker - L'instance du marqueur Leaflet cliqué
- */
-async getWalkingRoute(stopCoords, marker) {
-    this.layers.walking.clearLayers();
+        const start = `${this.lastPosition.coords.longitude},${this.lastPosition.coords.latitude}`;
+        const end = `${stopCoords.lon},${stopCoords.lat}`;
+        const url = `https://router.project-osrm.org/route/v1/foot/${start};${end}?overview=full&geometries=geojson`;
 
-    const start = `${this.lastPosition.coords.longitude},${this.lastPosition.coords.latitude}`;
-    const end = `${stopCoords.lon},${stopCoords.lat}`;
-    const url = `https://router.project-osrm.org/route/v1/foot/${start};${end}?overview=full&geometries=geojson`;
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
 
-    try {
-        const response = await fetch(url);
-        const data = await response.json();
+            if (data.routes && data.routes.length > 0) {
+                const routeData = data.routes[0];
+                
+                // Calcul du temps réaliste (75 mètres par minute)
+                const distanceMetres = routeData.distance;
+                const finalMin = Math.round(distanceMetres / 75) || 1;
+                const finalDist = distanceMetres > 1000 
+                    ? (distanceMetres / 1000).toFixed(2) + " km" 
+                    : Math.round(distanceMetres) + " m";
 
-        if (data.routes && data.routes.length > 0) {
-            const routeData = data.routes[0];
-            
-            // Calcul réaliste (75m / min)
-            const distanceMetres = routeData.distance;
-            const finalMin = Math.round(distanceMetres / 75) || 1;
-            const finalDist = distanceMetres > 1000 
-                ? (distanceMetres / 1000).toFixed(2) + " km" 
-                : Math.round(distanceMetres) + " m";
-
-            // --- MISE À JOUR DU POPUP ---
-            const popup = marker.getPopup();
-            if (popup) {
-                let content = popup.getContent();
-
-                // Si le contenu est du texte, on le traite
-                if (typeof content === 'string') {
-                    const newInfo = `🚶‍♂️ <b>${finalMin} min</b> (${finalDist})`;
-                    // On remplace la div de chargement par le vrai résultat
-                    content = content.replace(
-                        '<div class="walking-info">⌛ Calcul du trajet à pied...</div>', 
-                        `<div class="walking-info">${newInfo}</div>`
-                    );
-                    marker.setPopupContent(content);
+                // MISE À JOUR DYNAMIQUE : On remplace le texte "⌛ Calcul..." par le vrai temps
+                const popup = marker.getPopup();
+                if (popup) {
+                    let content = popup.getContent();
+                    if (typeof content === 'string') {
+                        const newInfo = `🚶‍♂️ <b>${finalMin} min</b> (${finalDist})`;
+                        content = content.replace(
+                            '<div class="walking-info">⌛ Calcul du trajet à pied...</div>', 
+                            `<div class="walking-info">${newInfo}</div>`
+                        );
+                        marker.setPopupContent(content);
+                    }
                 }
+
+                // Dessin du tracé bleu en pointillés
+                L.geoJSON(routeData.geometry, {
+                    style: { color: '#3388ff', weight: 6, opacity: 0.8, dashArray: '10, 15' }
+                }).addTo(this.layers.walking);
             }
-
-            // Dessin du tracé
-            L.geoJSON(routeData.geometry, {
-                style: { color: '#3388ff', weight: 6, opacity: 0.8, dashArray: '10, 15' }
-            }).addTo(this.layers.walking);
-
-            // Ajustement de la vue
-            /*
-            const bounds = L.latLngBounds([
-                [this.lastPosition.coords.latitude, this.lastPosition.coords.longitude],
-                [stopCoords.lat, stopCoords.lon]
-            ]);
-            this.map.flyToBounds(bounds, { padding: [100, 100], duration: 1.5 });
-            */
+        } catch (error) {
+            console.error("Erreur itinéraire OSRM :", error);
         }
-    } catch (error) {
-        console.error("Erreur itinéraire OSRM :", error);
     }
-}
-
 }
 
 export { Geo };
