@@ -308,11 +308,13 @@ async getWalkingRoute(stopCoords, marker) {
             }).addTo(this.layers.walking);
 
             // Ajustement de la vue
+            /*
             const bounds = L.latLngBounds([
                 [this.lastPosition.coords.latitude, this.lastPosition.coords.longitude],
                 [stopCoords.lat, stopCoords.lon]
             ]);
             this.map.flyToBounds(bounds, { padding: [100, 100], duration: 1.5 });
+            */
         }
     } catch (error) {
         console.error("Erreur itinéraire OSRM :", error);
