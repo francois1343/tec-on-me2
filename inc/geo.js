@@ -41,10 +41,18 @@ class Geo {
 
         // Écouteur global pour les lignes de bus (Délégation d'événement)
         // On écoute la zone de la carte : si on clique sur un lien avec la classe 'bus-link', on trace la ligne.
-        this.$mapBox.addEventListener('click', (e) => {
-            if (e.target.classList.contains('bus-link')) {
+        // Remplace ton ancien écouteur par celui-ci :
+        document.addEventListener('click', (e) => {
+            // On vérifie si l'élément cliqué (ou l'un de ses parents) est un lien de bus
+            const busLink = e.target.closest('.bus-link');
+            
+            if (busLink) {
                 e.preventDefault();
-                this.drawRoute(e.target.dataset.shape);
+                console.log("Chargement de la ligne :", busLink.dataset.shape);
+                this.drawRoute(busLink.dataset.shape);
+                
+                // Optionnel : On peut fermer le panneau quand on clique sur une ligne
+                // document.querySelector('#info-panel').classList.add('hidden');
             }
         });
 
@@ -148,6 +156,7 @@ class Geo {
 
         // Événement : Si on clique sur la carte, on relance une recherche à cet endroit
         this.map.on('click', (e) => {
+            document.querySelector('.info-panel').classList.add('hidden');
             this.layers.route.clearLayers(); // On efface le bus précédent
             this.loadStops({ coords: { latitude: e.latlng.lat, longitude: e.latlng.lng } });
         });
@@ -192,54 +201,52 @@ class Geo {
      * Crée physiquement les icônes d'arrêts et gère le contenu de la bulle d'info.
      */
     _renderStopMarker(stop) {
-        // Calcul de distance "vol d'oiseau" entre nous et l'arrêt
-        const stopPos = L.latLng(stop.coordinates.lat, stop.coordinates.lon);
-        const userPos = L.latLng(this.lastPosition.coords.latitude, this.lastPosition.coords.longitude);
-        const distance = userPos.distanceTo(stopPos);
-        const distText = distance > 1000 ? (distance / 1000).toFixed(1) + " km" : Math.round(distance) + " m";
+    const stopPos = L.latLng(stop.coordinates.lat, stop.coordinates.lon);
+    const userPos = L.latLng(this.lastPosition.coords.latitude, this.lastPosition.coords.longitude);
+    const distance = userPos.distanceTo(stopPos);
+    const distText = distance > 1000 ? (distance / 1000).toFixed(1) + " km" : Math.round(distance) + " m";
 
-        // Ajout du marqueur d'arrêt dans le bon tiroir
-        const marker = L.marker([stop.coordinates.lat, stop.coordinates.lon], { icon: this.icons.stop })
-            .addTo(this.layers.stops);
+    const marker = L.marker([stop.coordinates.lat, stop.coordinates.lon], { icon: this.icons.stop })
+        .addTo(this.layers.stops);
 
-        // Quand on clique sur un arrêt
-        marker.on('click', async () => {
-            // 1. On interroge notre API locale pour savoir quels bus passent ici
-            const response = await fetch(`${this.urlApi}/bus/${stop.stop_name}/${stop.coordinates.lon}`);
-            const data = await response.json();
-            
-            let busHtml = "";
-            if (data.code === "ok") {
-                // On boucle sur chaque bus pour créer un lien cliquable
-                data.content.forEach(bus => {
-                    if (bus.route_id) {
-                        busHtml += `<a href="#" class="bus-link" data-shape="${bus.shape_id}">${bus.route_short_name} - ${bus.route_long_name}</a><br>`;
-                    }
-                });
-            } else {
-                busHtml = `<p class="error">Aucun bus renseigné ici</p>`;
-            }
+    marker.on('click', async () => {
+        // 1. Récupération des bus
+        const response = await fetch(`${this.urlApi}/bus/${stop.stop_name}/${stop.coordinates.lon}`);
+        const data = await response.json();
+        
+        let busHtml = "";
+        if (data.code === "ok") {
+            data.content.forEach(bus => {
+                if (bus.route_id) {
+                    busHtml += `<a href="#" class="bus-link" data-shape="${bus.shape_id}">${bus.route_short_name} - ${bus.route_long_name}</a><br>`;
+                }
+            });
+        }
 
-            // 2. On prépare le contenu HTML de la popup
-            const fullContent = `
-                <h4>${stop.stop_name}</h4>
-                <p>📍 À ${distText} (vol d'oiseau)</p>
-                <div class="walking-info">⌛ Calcul du trajet à pied...</div>
-                <hr>
-                ${busHtml}
-            `;
+        // 2. Préparation du contenu du panneau
+        const $panel = document.querySelector('#info-panel');
+        $panel.innerHTML = `
+            <span class="close-panel">&times;</span>
+            <h4>${stop.stop_name}</h4>
+            <p>📍 À ${distText} (vol d'oiseau)</p>
+            <div class="walking-info">⌛ Calcul du trajet à pied...</div>
+            <hr>
+            <div class="bus-list">${busHtml}</div>
+        `;
 
-            // 3. On configure et on ouvre la popup
-            marker.bindPopup(fullContent, {
-                autoPan: false,
-                closeOnClick: true,
-                className: 'fixed-header-popup'
-            }).openPopup();
+        // 3. Affichage (en retirant la classe hidden)
+        $panel.classList.remove('hidden');
 
-            // 4. On lance en arrière-plan le calcul du vrai chemin à pied
-            this.getWalkingRoute(stop.coordinates, marker);
+        // 4. Gestion de la fermeture
+        $panel.querySelector('.close-panel').addEventListener('click', () => {
+            $panel.classList.add('hidden');
+            this.layers.walking.clearLayers(); // On efface le tracé bleu aussi
         });
-    }
+
+        // 5. Calcul de l'itinéraire piéton (on adapte pour cibler la div interne)
+        this.getWalkingRoute(stop.coordinates);
+    });
+}
 
     /**
      * 7. ITINÉRAIRES (ROUTE & WALKING)
@@ -274,50 +281,35 @@ class Geo {
     }
 
     // Calcule le chemin piéton via l'API OSRM
-    async getWalkingRoute(stopCoords, marker) {
-        this.layers.walking.clearLayers(); // Efface l'ancien chemin bleu
+ async getWalkingRoute(stopCoords) {
+    this.layers.walking.clearLayers();
 
-        const start = `${this.lastPosition.coords.longitude},${this.lastPosition.coords.latitude}`;
-        const end = `${stopCoords.lon},${stopCoords.lat}`;
-        const url = `https://router.project-osrm.org/route/v1/foot/${start};${end}?overview=full&geometries=geojson`;
+    const start = `${this.lastPosition.coords.longitude},${this.lastPosition.coords.latitude}`;
+    const end = `${stopCoords.lon},${stopCoords.lat}`;
+    const url = `https://router.project-osrm.org/route/v1/foot/${start};${end}?overview=full&geometries=geojson`;
 
-        try {
-            const response = await fetch(url);
-            const data = await response.json();
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
 
-            if (data.routes && data.routes.length > 0) {
-                const routeData = data.routes[0];
-                
-                // Calcul du temps réaliste (75 mètres par minute)
-                const distanceMetres = routeData.distance;
-                const finalMin = Math.round(distanceMetres / 75) || 1;
-                const finalDist = distanceMetres > 1000 
-                    ? (distanceMetres / 1000).toFixed(2) + " km" 
-                    : Math.round(distanceMetres) + " m";
+        if (data.routes && data.routes.length > 0) {
+            const routeData = data.routes[0];
+            const finalMin = Math.round(routeData.distance / 75) || 1;
+            const finalDist = routeData.distance > 1000 ? (routeData.distance/1000).toFixed(2) + " km" : Math.round(routeData.distance) + " m";
 
-                // MISE À JOUR DYNAMIQUE : On remplace le texte "⌛ Calcul..." par le vrai temps
-                const popup = marker.getPopup();
-                if (popup) {
-                    let content = popup.getContent();
-                    if (typeof content === 'string') {
-                        const newInfo = `🚶‍♂️ <b>${finalMin} min</b> (${finalDist})`;
-                        content = content.replace(
-                            '<div class="walking-info">⌛ Calcul du trajet à pied...</div>', 
-                            `<div class="walking-info">${newInfo}</div>`
-                        );
-                        marker.setPopupContent(content);
-                    }
-                }
-
-                // Dessin du tracé bleu en pointillés
-                L.geoJSON(routeData.geometry, {
-                    style: { color: '#3388ff', weight: 6, opacity: 0.8, dashArray: '10, 15' }
-                }).addTo(this.layers.walking);
+            // Mise à jour de l'info dans le panneau
+            const $walkingDiv = document.querySelector('.walking-info');
+            if ($walkingDiv) {
+                $walkingDiv.innerHTML = `🚶‍♂️ <b>${finalMin} min</b> (${finalDist})`;
             }
-        } catch (error) {
-            console.error("Erreur itinéraire OSRM :", error);
+
+            // Tracé bleu
+            L.geoJSON(routeData.geometry, {
+                style: { color: '#3388ff', weight: 6, opacity: 0.8, dashArray: '10, 15' }
+            }).addTo(this.layers.walking);
         }
-    }
+    } catch (e) { console.error(e); }
+}
 }
 
 export { Geo };

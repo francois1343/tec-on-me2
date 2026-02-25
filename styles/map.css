@@ -140,3 +140,41 @@ a.bus-link {
 #distance-value {
     color: white;
 }
+
+.info-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    background-color: white;
+    z-index: 10000;
+    padding: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    box-sizing: border-box;
+    
+    /* L'ANIMATION */
+    /* On part d'une position normale (0) */
+    transform: translateY(0); 
+    /* Transition fluide : 0.4 seconde avec un effet de ralentissement à la fin */
+    transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Quand la classe 'hidden' est ajoutée, on remonte le panneau */
+.info-panel.hidden {
+    display: block !important; /* On force l'affichage pour que l'animation soit visible */
+    transform: translateY(-105%); /* On le cache au-dessus (le 5% de marge évite de voir l'ombre) */
+}
+
+.close-panel {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 30px;
+    cursor: pointer;
+    line-height: 1;
+    color: #B12A34;
+}
+
+/* On stylise un peu le contenu à l'intérieur */
+.info-panel h4 { margin: 0 0 10px 0; color: #333; }
+.info-panel p { margin: 5px 0; font-size: 0.9em; }
