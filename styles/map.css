@@ -178,3 +178,10 @@ a.bus-link {
 /* On stylise un peu le contenu à l'intérieur */
 .info-panel h4 { margin: 0 0 10px 0; color: #333; }
 .info-panel p { margin: 5px 0; font-size: 0.9em; }
+
+/* L'icône du marqueur cliqué */
+.marker-active {
+    filter: hue-rotate(180deg);
+    transition: filter 0.5s ease;
+    z-index: 1000 !important; /* Pour qu'il passe au-dessus des autres */
+}

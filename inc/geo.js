@@ -38,6 +38,7 @@ class Geo {
             route: L.layerGroup(),   // Pour le tracé rouge du bus
             walking: L.layerGroup()  // Pour le tracé bleu de la marche à pied
         };
+        this.activeMarker = null; // Pour stocker le marqueur de la position cliquée (si besoin)
 
         // Écouteur global pour les lignes de bus (Délégation d'événement)
         // On écoute la zone de la carte : si on clique sur un lien avec la classe 'bus-link', on trace la ligne.
@@ -156,8 +157,15 @@ class Geo {
 
         // Événement : Si on clique sur la carte, on relance une recherche à cet endroit
         this.map.on('click', (e) => {
+            // Nettoyage du marqueur actif
+            if (this.activeMarker && this.activeMarker._icon) {
+                this.activeMarker._icon.classList.remove('marker-active');
+            }
+            this.activeMarker = null;
+            // On cache le panneau d'info si on clique ailleurs
             document.querySelector('.info-panel').classList.add('hidden');
             this.layers.route.clearLayers(); // On efface le bus précédent
+            // On relance la recherche d'arrêts à l'endroit cliqué
             this.loadStops({ coords: { latitude: e.latlng.lat, longitude: e.latlng.lng } });
         });
     }
@@ -210,6 +218,16 @@ class Geo {
         .addTo(this.layers.stops);
 
     marker.on('click', async () => {
+        // Si un autre marqueur était actif, on lui retire la classe
+        if (this.activeMarker && this.activeMarker._icon) {
+            this.activeMarker._icon.classList.remove('marker-active');
+        }
+
+        // On ajoute la classe au marqueur actuel
+        marker._icon.classList.add('marker-active');
+        
+        // On mémorise que c'est lui le nouveau "chef"
+        this.activeMarker = marker;
         // 1. Récupération des bus
         const response = await fetch(`${this.urlApi}/bus/${stop.stop_name}/${stop.coordinates.lon}`);
         const data = await response.json();
