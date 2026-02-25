@@ -50,3 +50,35 @@ Cette API est interrogée pour peupler la carte en marqueurs.
 ### 2. Passages des bus (API Locale / Cepegra)
 Permet de lister les lignes de bus s'arrêtant à un point précis.
 - **Utilisation** : Au clic sur un marqueur d'arrêt.
+- **Données récupérées** : Nom de la ligne, destination et `shape_id` (identifiant unique du tracé de la route).
+
+### 3. Itinéraire piéton (OSRM - Open Source Routing Machine)
+Calcul le chemin le plus court en suivant les rues praticables.
+- **Utilisation** : Dans `getWalkingRoute()`.
+- **Algorithme** : L'API renvoie une géométrie (GeoJSON) pour le tracé bleu et une distance en mètres.
+- **Calcul de temps** : La distance est divisée par une base de 75m/min pour afficher une estimation réaliste à l'utilisateur.
+
+
+
+---
+
+## 🛠 Installation et usage
+
+1. **Clonage** : Copiez les fichiers sur votre environnement local.
+2. **Serveur Local** : Utilisez un serveur (ex: Live Server sur VS Code) pour ouvrir `index.html`. 
+   > *Note : Le GPS nécessite un contexte sécurisé (localhost ou HTTPS).*
+3. **Navigation** : 
+   - Choisissez votre mode sur la page d'accueil.
+   - Ajustez la distance via le curseur en bas de l'écran.
+   - Cliquez sur un arrêt pour voir le trajet à pied et les bus disponibles.
+
+---
+
+## 🎨 Détails Techniques (UX/UI)
+
+- **Gestion des Calques (Layers)** : Pour éviter de recharger la carte entière, nous utilisons des `L.layerGroup()`. Cela permet d'effacer les trajets piétons sans supprimer les marqueurs d'arrêts.
+- **Popups Fixes** : Un traitement CSS spécifique force les popups Leaflet à s'afficher sous forme de bandeau fixe en haut de l'écran pour une ergonomie "Mobile First".
+- **Délégation d'événements** : Les clics sur les liens de bus (générés dynamiquement) sont capturés par un écouteur global sur le conteneur de la carte pour optimiser les performances.
+
+---
+*Projet réalisé dans le cadre du Bootcamp Front-End.*
