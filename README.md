@@ -82,3 +82,6 @@ Calcul le chemin le plus court en suivant les rues praticables.
 
 ---
 *Projet réalisé dans le cadre du Bootcamp Front-End.*
+
+
+# Plus en détails techniques
