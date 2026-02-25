@@ -136,3 +136,7 @@ a.bus-link {
     from { transform: translateY(-100%); }
     to { transform: translateY(0); }
 }
+
+#distance-value {
+    color: white;
+}
