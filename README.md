@@ -76,7 +76,7 @@ Calcul le chemin le plus court en suivant les rues praticables.
 
 ## 🎨 Détails Techniques (UX/UI)
 
-- **Gestion des Calques (Layers)** : Pour éviter de recharger la carte entière, nous utilisons des `L.layerGroup()`. Cela permet d'effacer les trajets piétons sans supprimer les marqueurs d'arrêts.
+- **Gestion des Calques (Layers)** : Gestion granulaire via les Calques (Layers) : L'utilisation de L.layerGroup() permet de segmenter les données (arrêts, tracés de bus, itinéraires piétons). Cela offre une manipulation chirurgicale de l'affichage : on peut réinitialiser spécifiquement le tracé piéton lors d'un nouveau clic sans perturber les autres éléments visuels déjà présents.
 - **Popups Fixes** : Un traitement CSS spécifique force les popups Leaflet à s'afficher sous forme de bandeau fixe en haut de l'écran pour une ergonomie "Mobile First".
 - **Délégation d'événements** : Les clics sur les liens de bus (générés dynamiquement) sont capturés par un écouteur global sur le conteneur de la carte pour optimiser les performances.
 
