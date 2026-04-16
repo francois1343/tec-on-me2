@@ -166,7 +166,7 @@ class Geo {
             document.querySelector('.info-panel').classList.add('hidden');
             this.layers.route.clearLayers(); // On efface le bus précédent
             // On relance la recherche d'arrêts à l'endroit cliqué
-            this.loadStops({ coords: { latitude: e.latlng.lat, longitude: e.latlng.lng } });
+            this.loadStops({ coords: { latitude: e.latlng.lat, longitude: e.latlng.lng } }, true);
         });
     }
 
@@ -174,14 +174,18 @@ class Geo {
      * 5. CHARGEMENT DES DONNÉES (API)
      * Va chercher les arrêts de bus TEC réels via l'Open Data Wallonie-Bruxelles.
      */
-    async loadStops(position) {
+    async loadStops(position, showClickMarker = false) {
         this.lastPosition = position; // Sauvegarde pour les calculs d'itinéraires piétons
         
         // Nettoyage avant de charger de nouveaux points
         this.layers.stops.clearLayers();
         
         // On place un marqueur "cible" là où on a cliqué
-        L.marker([position.coords.latitude, position.coords.longitude], { icon: this.icons.userClick }).addTo(this.layers.stops);
+        if (showClickMarker) {
+        L.marker([position.coords.latitude, position.coords.longitude], { 
+            icon: this.icons.userClick 
+        }).addTo(this.layers.stops);
+    }
         
         const { latitude, longitude } = position.coords;
 
@@ -304,7 +308,7 @@ class Geo {
 
     const start = `${this.lastPosition.coords.longitude},${this.lastPosition.coords.latitude}`;
     const end = `${stopCoords.lon},${stopCoords.lat}`;
-    const url = `https://router.project-osrm.org/route/v1/foot/${start};${end}?overview=full&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/foot/${start};${end}?overview=full&geometries=geojson&alternatives=false&steps=false`;
 
     try {
         const response = await fetch(url);
