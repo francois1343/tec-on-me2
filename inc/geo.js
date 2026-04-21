@@ -8,7 +8,6 @@
  * 4. MOTEUR DE CARTE (LEAFLET) ........... Création et gestion des calques
  * 5. CHARGEMENT DES DONNÉES (API) ........ Récupération des arrêts (ODWB)
  * 6. RENDU ET POPUPS ..................... Affichage des marqueurs et bus
- * 7. ITINÉRAIRES (ROUTE & WALKING) ....... Tracés bus (Red) et piéton (Blue)
  * =============================================================================
  */
 
@@ -17,13 +16,12 @@ class Geo {
      * 1. CONSTRUCTEUR & CONFIGURATION
      * Prépare les variables de base dont l'application a besoin pour fonctionner.
      */
-    constructor($mapBox, $geoSwitch) {
+    constructor($mapBox) {
         // L'adresse de notre serveur qui contient les données des lignes de bus
         this.urlApi = 'https://cepegra-frontend.xyz/bootcamp';
         
         // Références aux éléments HTML (la div de la carte et le bouton)
         this.$mapBox = $mapBox;
-        this.$geoSwitch = $geoSwitch;
         
         // État de l'application : on stocke la carte et la distance de recherche
         this.map = null;          // Contiendra l'objet Leaflet une fois créé
@@ -36,7 +34,6 @@ class Geo {
         this.layers = {
             stops: L.layerGroup(),   // Pour les icônes d'arrêts de bus
             route: L.layerGroup(),   // Pour le tracé rouge du bus
-            walking: L.layerGroup()  // Pour le tracé bleu de la marche à pied
         };
         this.activeMarker = null; // Pour stocker le marqueur de la position cliquée (si besoin)
 
@@ -79,8 +76,7 @@ class Geo {
             stop: L.icon({ ...configCommune, iconUrl: './icons/icon-map-bus-stop.svg' }),
             start: L.icon({ ...configCommune, iconUrl: './icons/icon-map-bus-start.svg' }),
             end: L.icon({ ...configCommune, iconUrl: './icons/icon-map-bus-end.svg' }),
-            user: L.icon({ ...configCommune, iconUrl: './icons/icon-map-user-location.svg' }),
-            userClick: L.icon({ ...configCommune, iconUrl: './icons/geo-gps-on.svg' })
+            user: L.icon({ ...configCommune, iconUrl: './icons/icon-map-user-location.svg' })
         };
     }
 
@@ -147,27 +143,12 @@ class Geo {
         // On active nos "tiroirs" (calques) sur la carte
         this.layers.stops.addTo(this.map);
         this.layers.route.addTo(this.map);
-        this.layers.walking.addTo(this.map);
 
         // Marqueur fixe pour notre position initiale
         L.marker([latitude, longitude], { icon: this.icons.user }).addTo(this.map);
 
         // On charge les arrêts autour de nous
         this.loadStops(position);
-
-        // Événement : Si on clique sur la carte, on relance une recherche à cet endroit
-        this.map.on('click', (e) => {
-            // Nettoyage du marqueur actif
-            if (this.activeMarker && this.activeMarker._icon) {
-                this.activeMarker._icon.classList.remove('marker-active');
-            }
-            this.activeMarker = null;
-            // On cache le panneau d'info si on clique ailleurs
-            document.querySelector('.info-panel').classList.add('hidden');
-            this.layers.route.clearLayers(); // On efface le bus précédent
-            // On relance la recherche d'arrêts à l'endroit cliqué
-            this.loadStops({ coords: { latitude: e.latlng.lat, longitude: e.latlng.lng } }, true);
-        });
     }
 
     /**
@@ -179,13 +160,6 @@ class Geo {
         
         // Nettoyage avant de charger de nouveaux points
         this.layers.stops.clearLayers();
-        
-        // On place un marqueur "cible" là où on a cliqué
-        if (showClickMarker) {
-        L.marker([position.coords.latitude, position.coords.longitude], { 
-            icon: this.icons.userClick 
-        }).addTo(this.layers.stops);
-    }
         
         const { latitude, longitude } = position.coords;
 
@@ -232,7 +206,7 @@ class Geo {
         
         // On mémorise que c'est lui le nouveau "chef"
         this.activeMarker = marker;
-        // 1. Récupération des bus
+        // 1. Récupération des bus qui passent par l'arrêt (via notre API)
         const response = await fetch(`${this.urlApi}/bus/${stop.stop_name}/${stop.coordinates.lon}`);
         const data = await response.json();
         
@@ -250,8 +224,6 @@ class Geo {
         $panel.innerHTML = `
             <span class="close-panel">&times;</span>
             <h4>${stop.stop_name}</h4>
-            <p>📍 À ${distText} (vol d'oiseau)</p>
-            <div class="walking-info">⌛ Calcul du trajet à pied...</div>
             <hr>
             <div class="bus-list">${busHtml}</div>
         `;
@@ -264,22 +236,17 @@ class Geo {
             $panel.classList.add('hidden');
             this.layers.walking.clearLayers(); // On efface le tracé bleu aussi
         });
-
-        // 5. Calcul de l'itinéraire piéton (on adapte pour cibler la div interne)
-        this.getWalkingRoute(stop.coordinates);
     });
 }
 
-    /**
-     * 7. ITINÉRAIRES (ROUTE & WALKING)
-     * Dessine les lignes sur la carte (Bus en rouge, Marche en bleu).
-     */
+
     
     // Trace le parcours complet d'une ligne de bus (depuis notre API)
     async drawRoute(shapeId) {
         this.layers.route.clearLayers(); // On efface le trajet précédent
 
         try {
+            //requête à notre API pour récupérer les points de la ligne de bus
             const response = await fetch(`${this.urlApi}/shapes/${shapeId}`);
             const data = await response.json();
 
@@ -302,36 +269,7 @@ class Geo {
         }
     }
 
-    // Calcule le chemin piéton via l'API OSRM
- async getWalkingRoute(stopCoords) {
-    this.layers.walking.clearLayers();
-
-    const start = `${this.lastPosition.coords.longitude},${this.lastPosition.coords.latitude}`;
-    const end = `${stopCoords.lon},${stopCoords.lat}`;
-    const url = `https://router.project-osrm.org/route/v1/foot/${start};${end}?overview=full&geometries=geojson&alternatives=false&steps=false`;
-
-    try {
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.routes && data.routes.length > 0) {
-            const routeData = data.routes[0];
-            const finalMin = Math.round(routeData.distance / 75) || 1;
-            const finalDist = routeData.distance > 1000 ? (routeData.distance/1000).toFixed(2) + " km" : Math.round(routeData.distance) + " m";
-
-            // Mise à jour de l'info dans le panneau
-            const $walkingDiv = document.querySelector('.walking-info');
-            if ($walkingDiv) {
-                $walkingDiv.innerHTML = `🚶‍♂️ <b>${finalMin} min</b> (${finalDist})`;
-            }
-
-            // Tracé bleu
-            L.geoJSON(routeData.geometry, {
-                style: { color: '#3388ff', weight: 6, opacity: 0.8, dashArray: '10, 15' }
-            }).addTo(this.layers.walking);
-        }
-    } catch (e) { console.error(e); }
-}
+   
 }
 
 export { Geo };

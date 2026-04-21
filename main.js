@@ -16,13 +16,11 @@ import boxClose from './inc/box.js';
 
 // --- 2. SÉLECTION DES ÉLÉMENTS HTML ---
 // On crée des constantes pour manipuler les éléments de notre page HTML
-const $mapBox = document.querySelector('#map');            // La zone où s'affiche la carte
-const $geoBtn = document.querySelector('.geo-btn');         // Le bouton pour se relocaliser
-const $distanceRange = document.querySelector('#distance'); // Le curseur pour le rayon (km)
+const $mapBox = document.querySelector('#map');            // La zone où s'affiche la carte      // Le bouton pour se relocaliser
 
 // --- 3. INITIALISATION ---
 // On crée l'instance de l'objet Geo (on prépare la machine)
-const myGeo = new Geo($mapBox, $geoBtn);
+const myGeo = new Geo($mapBox);
 
 /**
  * LOGIQUE DE DÉMARRAGE :
@@ -44,43 +42,3 @@ if (localisationParam === 'n') {
 
 // On active la petite croix (X) sur toutes nos fenêtres d'alertes
 boxClose();
-
-
-// --- 4. ÉCOUTEURS D'ÉVÉNEMENTS (INTERACTIONS) ---
-
-/**
- * GESTION DU CURSEUR DE DISTANCE
- * Permet de mettre à jour la recherche quand on bouge le curseur.
- * L'événement 'input' réagit pendant que l'on glisse.
- */
-$distanceRange.addEventListener('input', (e) => {
-    // On récupère la valeur du curseur (1, 2, 5... km)
-    const km = e.target.value;
-    
-    // 1. Mise à jour du texte indicateur dans le HTML (si présent)
-    const $distDisplay = document.querySelector('#distance-value');
-    if ($distDisplay) $distDisplay.textContent = `${km} km`;
-
-    // 2. On informe notre objet "myGeo" que la distance a changé
-    myGeo.setDistance(km);
-
-    // 3. RELANCER LA RECHERCHE AUTOMATIQUEMENT
-    // Si on a déjà une position, on demande à la carte de recharger les arrêts
-    if (myGeo.lastPosition) {
-        myGeo.loadStops(myGeo.lastPosition);
-    }
-});
-
-/**
- * BOUTON "ME GÉOLOCALISER"
- * Permet de recentrer la carte sur sa position réelle à n'importe quel moment.
- */
-$geoBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    
-    // Petit message de debug pour confirmer le clic
-    console.log("Demande de relocalisation GPS...");
-    
-    // On relance la procédure complète de localisation
-    myGeo.init();
-});

@@ -10,29 +10,13 @@ import boxClose from './inc/box.js'
 
 //sélection des éléments HTML
 const $mapBox = document.querySelector('#map')
-const $geoSwitch = document.querySelector('.geo-btn')
 
-const myGeo = new Geo($mapBox, $geoSwitch)
+const myGeo = new Geo($mapBox)
 myGeo.init()
 // Gestion du curseur de distance
 const $distanceRange = document.querySelector('#distance');
 
-$distanceRange.addEventListener('input', (e) => {
-    const km = e.target.value;
-    console.log(`Nouvelle distance de recherche : ${km} km`);
-    
-    // On met à jour la propriété dans l'objet Geo
-    myGeo.setDistance(km);
-});
 
-
-// Quand on clique sur le bouton "Me géolocaliser" A FINIR
-$geoSwitch.addEventListener('click', e => {
-e.preventDefault()
-alert('geo')
-// On déclenche la méthode geoLoc
-myGeo.init()
-})
 
 // délenche la gestion de fermetures des boxes
 boxClose()
